@@ -78,15 +78,19 @@ def generateData(dir, train=True):
                 os.path.join(path, image))
             # x, y, w, h = cv2.boundingRect(image_as_numpy_array)
             cropped = None
+            # MTCNN Detects the face
             detected = detector.detect_faces(image_as_numpy_array)
+            # Convert back to grayscale
             gray = cv2.cvtColor(image_as_numpy_array, cv2.COLOR_BGR2GRAY)
             if detected and len(detected) > 0:
+                # These are the face coordinates
                 x, y, w, h = detected[0]['box']
                 print(x, y, w, h)
                 if y < 0:
                     y = 0
                 if x < 0:
                     x = 0
+                # Crop to those coordinates
                 cropped = gray[y:y+h, x:x+w]
             else:
                 cropped = gray

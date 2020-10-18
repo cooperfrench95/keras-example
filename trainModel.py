@@ -3,8 +3,10 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
 import os
-from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.layers import Dense, Conv2D, Input, MaxPooling2D, Flatten, Dropout, Lambda
+from tensorflow.keras.models import Model, Sequential, load_model
+from tensorflow.keras.layers import Dense, Conv2D, Input, MaxPooling2D, Flatten, Dropout, Lambda, BatchNormalization
+from tensorflow.keras.utils import to_categorical
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 TRAIN_PICKLE_LABELS = 'training_mask_labels.pickle'
@@ -16,7 +18,7 @@ VALIDATION_PICKLE_FEATURES = 'validation_mask_features.pickle'
 VALIDATION_PICKLE_LABELS = 'validation_mask_labels.pickle'
 
 IMG_SIZE = 64
-AMOUNT_CLASSES = 460
+AMOUNT_CLASSES = 64
 
 # Import data
 features_train = None
@@ -56,37 +58,38 @@ with open(VALIDATION_PICKLE_LABELS, 'rb') as f:
 inputs = Input(shape=(IMG_SIZE, IMG_SIZE, 1))
 # Convolution
 x = Conv2D(32, (3, 3), input_shape=features_train.shape[1:],
-           activation="relu", use_bias=False, padding="same")(inputs)
+           activation="relu", use_bias=True, padding="same")(inputs)
 # Pooling
 x = MaxPooling2D(pool_size=(2, 2), padding="same")(x)
 # Dropout to reduce overfit
-# x = Dropout(0.3)(x)
+# x = Dropout(0.1)(x)
 # Convolution
-x = Conv2D(64, (3, 3), activation="linear", use_bias=False, padding="same")(x)
+x = Conv2D(64, (3, 3), activation="linear", use_bias=True, padding="same")(x)
 # Pooling
 x = MaxPooling2D(pool_size=(2, 2), padding="same")(x)
 # Dropout to reduce overfit
-# x = Dropout(0.3)(x)
-# Convolution
-x = Conv2D(128, (3, 3), activation="linear", use_bias=False, padding="same")(x)
-# Pooling
-x = MaxPooling2D(pool_size=(2, 2), padding="same")(x)
-# Dropout to reduce overfit
-x = Dropout(0.3)(x)
-# Convolution
-x = Conv2D(256, (3, 3), activation="linear", use_bias=False, padding="same")(x)
-# Pooling
-x = MaxPooling2D(pool_size=(2, 2), padding="same")(x)
-# Dropout to reduce overfit
-x = Dropout(0.3)(x)
+x = Dropout(0.5)(x)
+# # Convolution
+# x = Conv2D(64, (3, 3), activation="linear", use_bias=True, padding="same")(x)
+# # Pooling
+# x = MaxPooling2D(pool_size=(2, 2), padding="same")(x)
+# # Dropout to reduce overfit
+# x = Dropout(0.1)(x)
+# # Convolution
+# x = Conv2D(128, (3, 3), activation="linear", use_bias=True, padding="same")(x)
+# # Pooling
+# x = MaxPooling2D(pool_size=(2, 2), padding="same")(x)
+# # Dropout to reduce overfit
+# x = Dropout(0.1)(x)
 # Convolutions
-x = Conv2D(512, (3, 3), activation="linear", use_bias=False, padding="same")(x)
+x = Conv2D(128, (3, 3), activation="linear",
+           use_bias=True, padding="same")(x)
 # Pooling
 x = MaxPooling2D(pool_size=(2, 2), padding="same")(x)
 # Flatten
 x = Flatten()(x)
 # Final
-x = Dense(512, activation="linear")(x)
+x = Dense(128, activation="linear")(x)
 # Output layer
 preds = Dense(AMOUNT_CLASSES, activation="softmax")(x)
 model = Model(inputs=inputs, outputs=preds)
@@ -94,13 +97,13 @@ model = Model(inputs=inputs, outputs=preds)
 # The below model uses triplet loss, but doesn't work very well
 
 # model = tf.keras.Sequential([
-#   Conv2D(32, (3, 3), input_shape=features.shape[1:], activation="relu", use_bias=False, padding="same"),
+#   Conv2D(32, (3, 3), input_shape=features.shape[1:], activation="relu", use_bias=True, padding="same"),
 #   MaxPooling2D(pool_size=(2,2), padding="same"),
 #   Dropout(0.3),
 #   Conv2D(64, (3, 3), padding="same", activation="relu"),
 #   MaxPooling2D(pool_size=(2, 2)),
 #   Dropout(0.3),
-#   Conv2D(128, (3, 3), input_shape=features.shape[1:], activation="relu", use_bias=False, padding="same"),
+#   Conv2D(128, (3, 3), input_shape=features.shape[1:], activation="relu", use_bias=True, padding="same"),
 #   MaxPooling2D(pool_size=(2,2), padding="same"),
 #   Dropout(0.3),
 #   Flatten(),
@@ -124,9 +127,23 @@ model.compile(
 #   optimizer=tf.keras.optimizers.Adam(),
 #   metrics=['accuracy']
 # )
-model.fit(features_train, labels_train, batch_size=50,
-          validation_data=(features_test, labels_test), epochs=5)
+
+
+print(len(features_test), len(features_train), len(features_validate))
+print(features_validate[0].shape)
+print(features_train.shape)
+print(labels_train.shape)
+
+model.fit(features_train, labels_train, batch_size=20, validation_split=0.2,
+          epochs=5)
+
+
+model.save('./model')
+del model
+model = load_model('./model')
+# prediction = model.predict(features_validate, callbacks=[Callbacks()])
+
 
 results = model.evaluate(
-    features_validate, labels_validate, batch_size=50)
+    features_test, labels_test, batch_size=20)
 print('test loss, test acc:', results)

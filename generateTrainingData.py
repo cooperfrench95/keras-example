@@ -3,10 +3,11 @@ import os
 import random
 import numpy as np
 import pickle
-
+from mtcnn import MTCNN
+import matplotlib.pyplot as plt
 
 IMG_SIZE = 64
-MIN_PICS_PER_PERSON_IN_TRAINING_SET = 3
+MIN_PICS_PER_PERSON_IN_TRAINING_SET = 50
 TRAIN_DIR = './self-built-masked-face-recognition-dataset/AFDB_face_dataset'
 TEST_DIR = './self-built-masked-face-recognition-dataset/AFDB_masked_face_dataset'
 
@@ -16,14 +17,21 @@ TEST_DIR = './self-built-masked-face-recognition-dataset/AFDB_masked_face_datase
 faces = os.listdir(TRAIN_DIR)
 masked = os.listdir(TEST_DIR)
 
+detector = MTCNN()
+
 actualMasked = []
-for maskedPerson in masked:
-    if len(os.listdir(TEST_DIR + '/' + maskedPerson)) > 0:
-        actualMasked.append(maskedPerson)
+for maskedPerson in faces:
+    if (len(actualMasked)) > 63:
+        break
+    try:
+        if len(os.listdir(TEST_DIR + '/' + maskedPerson)) > 0 and len(os.listdir(TRAIN_DIR + '/' + maskedPerson)) > 100:
+            actualMasked.append(maskedPerson)
+    except:
+        continue
 ignorelist = []
 for face in faces:
     for maskedPerson in masked:
-        if face not in masked:
+        if face not in actualMasked:
             ignorelist.append(face)
 
 people_labels = {}
@@ -49,7 +57,8 @@ def generateData(dir, train=True):
     train_images = []
 
     # Import images
-    count = 1
+    count = -1
+    imageCount = 0
     for person in PEOPLE:
         if person in ignorelist:
             continue
@@ -58,18 +67,35 @@ def generateData(dir, train=True):
         path = os.path.join(dir, person)
         amount = len(os.listdir(path))
         # Ensure each person has at least 3 images in the validation set
-        amountIgnore = amount - 3
-        if amountIgnore < 3:
+        amountIgnore = amount - MIN_PICS_PER_PERSON_IN_TRAINING_SET
+        if amountIgnore < MIN_PICS_PER_PERSON_IN_TRAINING_SET and train:
             continue
         for imageIndex, image in enumerate(os.listdir(path)):
+            imageCount += 1
+            print('imageCount', imageCount)
             # Read in images as an array of pixel values
             image_as_numpy_array = cv2.imread(
-                os.path.join(path, image), cv2.IMREAD_GRAYSCALE)
-            x, y, w, h = cv2.boundingRect(image_as_numpy_array)
+                os.path.join(path, image))
+            # x, y, w, h = cv2.boundingRect(image_as_numpy_array)
+            cropped = None
+            detected = detector.detect_faces(image_as_numpy_array)
+            gray = cv2.cvtColor(image_as_numpy_array, cv2.COLOR_BGR2GRAY)
+            if detected and len(detected) > 0:
+                x, y, w, h = detected[0]['box']
+                print(x, y, w, h)
+                if y < 0:
+                    y = 0
+                if x < 0:
+                    x = 0
+                cropped = gray[y:y+h, x:x+w]
+            else:
+                cropped = gray
             # Crop image, removing the bottom half (hopefully the mouth/mask)
-            cropped = image_as_numpy_array[y:int(y+h / 2), x:x+w]
-            # Transform image to be e.g. 28x28
+            # plt.imshow(cropped)
+            # plt.show()
             resized = cv2.resize(cropped, (IMG_SIZE, IMG_SIZE))
+            # cropped = image_as_numpy_array[y:int(y+h / 2), x:x+w]
+            # Transform image to be e.g. 28x28
             # Index represents the person's name, because apparently we can't pass a string as a classification type
             if not person in people_labels.keys() and train:
                 people_labels[person] = count
@@ -82,6 +108,8 @@ def generateData(dir, train=True):
             else:
                 images.append([resized, people_labels[person]])
 
+    print(people_labels)
+
     # The images must be shuffled, otherwise the network will learn incorrectly (it will learn to always guess the first guy, then the second guy, etc.)
     random.shuffle(images)
     random.shuffle(train_images)
@@ -89,9 +117,16 @@ def generateData(dir, train=True):
     features = []
     labels = []
 
+    train_features = []
+    train_labels = []
+
     for f, l in images:
         features.append(f)
         labels.append(l)
+
+    for f, l in train_images:
+        train_features.append(f)
+        train_labels.append(l)
 
     # Transform features into numpy array
     # reshape(amount_of_features, dimension, dimension, 1 = grayscale)
@@ -107,11 +142,14 @@ def generateData(dir, train=True):
         pickle.dump(labels, l)
 
     if train:
+        train_features = np.array(train_features).reshape(-1, IMG_SIZE,
+                                                          IMG_SIZE, 1).astype('float32') / 255.0
+        train_labels = np.array(train_labels).astype('float32')
         with open(FEATURES_TEST_OUT, 'wb') as f:
-            pickle.dump(features, f)
+            pickle.dump(train_features, f)
 
         with open(LABELS_TEST_OUT, 'wb') as l:
-            pickle.dump(labels, l)
+            pickle.dump(train_labels, l)
 
 
 generateData(TRAIN_DIR)
